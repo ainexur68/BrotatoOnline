@@ -138,6 +138,8 @@ var _host_known_remote_ids = []
 var _client_hello_retry_active = false
 var _client_hello_retry_delay_index = 0
 var _client_hello_next_retry_msec = 0
+var _client_hello_attempt_id = ""
+var _client_hello_attempt_counter = 0
 var _sent_character_setup_key_by_steam_id = {}
 var _sent_weapon_setup_key_by_steam_id = {}
 var _sent_scene_transition_key_by_steam_id = {}
@@ -149,6 +151,8 @@ var _pending_p2p_chunk_sends = []
 var _incoming_p2p_chunks = {}
 var _p2p_chunk_seq = 0
 var _seen_client_hello_by_steam_id = {}
+var _last_client_hello_attempt_id_by_steam_id = {}
+var _retired_client_hello_attempt_ids_by_steam_id = {}
 var _client_seen_host_setup_key_by_sender = {}
 var _client_seen_host_setup_msec_by_sender = {}
 var _last_selection_request_reply_msec_by_steam_id = {}
@@ -678,6 +682,7 @@ func leave_lobby() -> void:
 	_pending_received_menu_focus_order.clear()
 	_host_known_remote_ids.clear()
 	_stop_client_hello_retry("leave_lobby")
+	_client_hello_attempt_id = ""
 	_last_broadcast_selection_key = ""
 	_sent_character_setup_key_by_steam_id.clear()
 	_sent_weapon_setup_key_by_steam_id.clear()
@@ -686,6 +691,8 @@ func leave_lobby() -> void:
 	_pending_p2p_chunk_sends.clear()
 	_incoming_p2p_chunks.clear()
 	_seen_client_hello_by_steam_id.clear()
+	_last_client_hello_attempt_id_by_steam_id.clear()
+	_retired_client_hello_attempt_ids_by_steam_id.clear()
 	_client_seen_host_setup_key_by_sender.clear()
 	_client_seen_host_setup_msec_by_sender.clear()
 	_last_selection_request_reply_msec_by_steam_id.clear()
@@ -934,6 +941,8 @@ func _on_lobby_created(connect_result = 0, lobby_id = 0) -> void:
 	_online_flow_left_since_msec = 0
 	_pending_join_lobby_id = 0
 	_seen_client_hello_by_steam_id.clear()
+	_last_client_hello_attempt_id_by_steam_id.clear()
+	_retired_client_hello_attempt_ids_by_steam_id.clear()
 	_client_seen_host_setup_key_by_sender.clear()
 	_client_seen_host_setup_msec_by_sender.clear()
 	_last_selection_request_reply_msec_by_steam_id.clear()
@@ -1024,6 +1033,7 @@ func _on_lobby_joined(lobby_id = 0, permissions = 0, locked = false, response = 
 		_setup_lobby_data()
 		_setup_join_presence()
 		_stop_client_hello_retry("joined_as_host")
+		_client_hello_attempt_id = ""
 	else:
 		_setup_client_presence()
 		_start_client_hello_retry()
@@ -1734,6 +1744,7 @@ func _bump_online_session_generation(reason: String = "") -> void:
 
 func _reset_transient_online_state_for_new_session(reason: String = "") -> void:
 	_stop_client_hello_retry("new_session:" + str(reason))
+	_client_hello_attempt_id = ""
 	_bump_online_session_generation(reason)
 	_restore_client_retry_wave_setting_override()
 	_last_online_character_selection_restage_scene_id = 0
@@ -1754,6 +1765,8 @@ func _reset_transient_online_state_for_new_session(reason: String = "") -> void:
 	_pending_received_menu_focus_by_sender.clear()
 	_pending_received_menu_focus_order.clear()
 	_seen_client_hello_by_steam_id.clear()
+	_last_client_hello_attempt_id_by_steam_id.clear()
+	_retired_client_hello_attempt_ids_by_steam_id.clear()
 	_client_seen_host_setup_key_by_sender.clear()
 	_client_seen_host_setup_msec_by_sender.clear()
 	_last_selection_request_reply_msec_by_steam_id.clear()
@@ -1913,11 +1926,11 @@ func _get_message_lobby_id(message: Dictionary) -> String:
 
 
 func _is_known_online_message_type(msg_type: String) -> bool:
-	return msg_type == "hello" or msg_type == "request_selection_state" or msg_type == "menu_focus" or msg_type == "select_character" or msg_type == "select_weapon" or msg_type == "select_difficulty" or msg_type == "select_zone" or msg_type == "host_character_setup" or msg_type == "host_weapon_setup" or msg_type == "game_start_prepare" or msg_type == "game_start_time_ack" or msg_type == "client_game_scene_ready" or msg_type == "game_start_commit" or msg_type == "retry_wave_confirm" or msg_type == "retry_wave_decline" or msg_type == "retry_wave_state" or msg_type == "retry_wave_end" or msg_type == "menu_scene_state" or msg_type == "run_page_action_sync" or msg_type == "quick_chat" or msg_type == "battle_reliable_events" or msg_type == "battle_snapshot" or msg_type == "battle_terminal_state" or msg_type == "selection_state" or msg_type == "battle_input" or msg_type == "damage_claim_batch" or msg_type == "player_hp_state" or msg_type == "player_state" or msg_type == "entity_kill_claim" or msg_type == "boss_damage_report" or msg_type == "pickup_claim" or msg_type == "battle_entity_resync_request" or msg_type == "upgrade_direct_action" or msg_type == "bo_mod_message"
+	return msg_type == "hello" or msg_type == "hello_ack" or msg_type == "request_selection_state" or msg_type == "menu_focus" or msg_type == "select_character" or msg_type == "select_weapon" or msg_type == "select_difficulty" or msg_type == "select_zone" or msg_type == "host_character_setup" or msg_type == "host_weapon_setup" or msg_type == "game_start_prepare" or msg_type == "game_start_time_ack" or msg_type == "client_game_scene_ready" or msg_type == "game_start_commit" or msg_type == "retry_wave_confirm" or msg_type == "retry_wave_decline" or msg_type == "retry_wave_state" or msg_type == "retry_wave_end" or msg_type == "menu_scene_state" or msg_type == "run_page_action_sync" or msg_type == "quick_chat" or msg_type == "battle_reliable_events" or msg_type == "battle_snapshot" or msg_type == "battle_terminal_state" or msg_type == "selection_state" or msg_type == "battle_input" or msg_type == "damage_claim_batch" or msg_type == "player_hp_state" or msg_type == "player_state" or msg_type == "entity_kill_claim" or msg_type == "boss_damage_report" or msg_type == "pickup_claim" or msg_type == "battle_entity_resync_request" or msg_type == "upgrade_direct_action" or msg_type == "bo_mod_message"
 
 
 func _is_host_authoritative_message_type(msg_type: String) -> bool:
-	return msg_type == "host_character_setup" or msg_type == "host_weapon_setup" or msg_type == "game_start_prepare" or msg_type == "game_start_commit" or msg_type == "retry_wave_state" or msg_type == "retry_wave_end" or msg_type == "menu_scene_state" or msg_type == "run_page_action_sync" or msg_type == "quick_chat" or msg_type == "battle_reliable_events" or msg_type == "battle_snapshot" or msg_type == "battle_terminal_state" or msg_type == "selection_state" or msg_type == "upgrade_direct_action"
+	return msg_type == "hello_ack" or msg_type == "host_character_setup" or msg_type == "host_weapon_setup" or msg_type == "game_start_prepare" or msg_type == "game_start_commit" or msg_type == "retry_wave_state" or msg_type == "retry_wave_end" or msg_type == "menu_scene_state" or msg_type == "run_page_action_sync" or msg_type == "quick_chat" or msg_type == "battle_reliable_events" or msg_type == "battle_snapshot" or msg_type == "battle_terminal_state" or msg_type == "selection_state" or msg_type == "upgrade_direct_action"
 
 
 func _should_drop_p2p_message_for_session(from_steam_id: String, message: Dictionary) -> bool:
@@ -2127,6 +2140,11 @@ func _build_client_content_capability_for_hello() -> Dictionary:
 	return {}
 
 
+func _new_client_hello_attempt_id() -> String:
+	_client_hello_attempt_counter += 1
+	return "hello:" + str(_self_steam_id) + ":" + str(_client_hello_attempt_counter) + ":" + str(OS.get_ticks_usec())
+
+
 func _send_client_hello_to_host() -> void:
 	if _lobby_id == 0 or _is_game_host():
 		return
@@ -2135,19 +2153,23 @@ func _send_client_hello_to_host() -> void:
 	if owner_id == "":
 		return
 
-	_send_p2p_json(owner_id, {
+	var hello = {
 		"msg_type": "hello",
 		"role": "client",
 		"steam_id": _self_steam_id,
 		"mod": "six666-BrotatoOnline",
 		"mod_version": MOD_VERSION,
 		"content_capability": _build_client_content_capability_for_hello()
-	}, true)
+	}
+	if _client_hello_attempt_id != "":
+		hello["hello_attempt_id"] = _client_hello_attempt_id
+	_send_p2p_json(owner_id, hello, true)
 
 
 func _start_client_hello_retry() -> void:
 	if _lobby_id == 0 or _is_game_host():
 		return
+	_client_hello_attempt_id = _new_client_hello_attempt_id()
 	_client_hello_retry_active = true
 	_client_hello_retry_delay_index = 0
 	_client_hello_next_retry_msec = OS.get_ticks_msec() + int(CLIENT_HELLO_RETRY_DELAYS_MSEC[0])
@@ -2159,6 +2181,127 @@ func _stop_client_hello_retry(reason: String = "") -> void:
 	_client_hello_retry_active = false
 	_client_hello_retry_delay_index = 0
 	_client_hello_next_retry_msec = 0
+
+
+func _stop_client_hello_retry_if_legacy(reason: String = "") -> void:
+	if _client_hello_attempt_id == "":
+		_stop_client_hello_retry(reason)
+
+
+func _erase_peer_prefixed_dictionary_entries(store: Dictionary, steam_id: String, separator: String = "|") -> void:
+	var prefix = steam_id + separator
+	for key in store.keys():
+		var key_string = str(key)
+		if key_string == steam_id or key_string.begins_with(prefix):
+			store.erase(key)
+
+
+func _clear_peer_reconnect_state(steam_id: String) -> void:
+	if steam_id == "" or steam_id == "0" or steam_id == _self_steam_id:
+		return
+
+	var input_manager = _get_online_input_manager()
+	if input_manager != null and input_manager.has_method("clear_remote_input_for_steam_id"):
+		input_manager.clear_remote_input_for_steam_id(steam_id)
+
+	var menu_sync = _get_menu_sync_manager()
+	if menu_sync != null and menu_sync.has_method("reset_remote_peer_reconnect_state"):
+		menu_sync.reset_remote_peer_reconnect_state(steam_id)
+
+	_sent_character_setup_key_by_steam_id.erase(steam_id)
+	_sent_weapon_setup_key_by_steam_id.erase(steam_id)
+	_sent_scene_transition_key_by_steam_id.erase(steam_id)
+	_full_item_list_scene_sync_required_by_steam_id.erase(steam_id)
+	_last_selection_request_reply_msec_by_steam_id.erase(steam_id)
+	_last_selection_request_setup_msec_by_steam_id.erase(steam_id)
+	_browser_ping_last_reply_msec_by_steam_id.erase(steam_id)
+	_last_battle_snapshot_sent_tick_by_steam_id.erase(steam_id)
+	_last_battle_reliable_sent_key_by_steam_id.erase(steam_id)
+	_last_battle_terminal_state_key_by_steam_id.erase(steam_id)
+	_last_battle_terminal_state_msec_by_steam_id.erase(steam_id)
+	_host_game_start_ack_by_steam_id.erase(steam_id)
+	_host_game_start_ready_by_steam_id.erase(steam_id)
+	_retry_wave_ready_by_steam_id.erase(steam_id)
+	_erase_peer_prefixed_dictionary_entries(_client_seen_host_setup_key_by_sender, steam_id, "|")
+	_erase_peer_prefixed_dictionary_entries(_client_seen_host_setup_msec_by_sender, steam_id, "|")
+
+	var i = _pending_p2p_chunk_sends.size() - 1
+	while i >= 0:
+		var queued = _pending_p2p_chunk_sends[i]
+		if typeof(queued) == TYPE_DICTIONARY and str(queued.get("target_steam_id", "")) == steam_id:
+			_pending_p2p_chunk_sends.remove(i)
+		i -= 1
+
+	var chunk_prefix = steam_id + ":"
+	for chunk_key in _incoming_p2p_chunks.keys():
+		if str(chunk_key).begins_with(chunk_prefix):
+			_incoming_p2p_chunks.erase(chunk_key)
+
+	for focus_key in _pending_received_menu_focus_by_sender.keys():
+		if str(focus_key).begins_with(chunk_prefix):
+			_pending_received_menu_focus_by_sender.erase(focus_key)
+			_pending_received_menu_focus_order.erase(focus_key)
+
+	_reset_steam_messages_session_with_peer(steam_id, "hello_new_attempt")
+
+
+func _process_client_hello_attempt(from_steam_id: String, message: Dictionary) -> Dictionary:
+	var hello_attempt_id = str(message.get("hello_attempt_id", ""))
+	var first_hello = not _seen_client_hello_by_steam_id.has(from_steam_id)
+	var new_attempt = false
+	var stale_attempt = false
+
+	if hello_attempt_id != "":
+		var last_attempt_id = str(_last_client_hello_attempt_id_by_steam_id.get(from_steam_id, ""))
+		var retired_attempts = _retired_client_hello_attempt_ids_by_steam_id.get(from_steam_id, [])
+		if typeof(retired_attempts) != TYPE_ARRAY:
+			retired_attempts = []
+		if hello_attempt_id == last_attempt_id:
+			pass
+		elif retired_attempts.has(hello_attempt_id):
+			stale_attempt = true
+		else:
+			new_attempt = true
+			if last_attempt_id != "":
+				retired_attempts.append(last_attempt_id)
+				while retired_attempts.size() > 8:
+					retired_attempts.pop_front()
+			_retired_client_hello_attempt_ids_by_steam_id[from_steam_id] = retired_attempts
+			if not stale_attempt:
+				_clear_peer_reconnect_state(from_steam_id)
+				_last_client_hello_attempt_id_by_steam_id[from_steam_id] = hello_attempt_id
+				var slot_manager = _get_slot_manager()
+				if slot_manager != null and slot_manager.has_method("restore_online_run_slot_snapshot_now"):
+					slot_manager.restore_online_run_slot_snapshot_now("hello_reconnect:" + from_steam_id)
+
+	if stale_attempt:
+		return {
+			"attempt_id": hello_attempt_id,
+			"has_attempt_id": true,
+			"first_hello": false,
+			"new_attempt": false,
+			"stale_attempt": true
+		}
+
+	_seen_client_hello_by_steam_id[from_steam_id] = true
+	return {
+		"attempt_id": hello_attempt_id,
+		"has_attempt_id": hello_attempt_id != "",
+		"first_hello": first_hello or new_attempt,
+		"new_attempt": new_attempt,
+		"stale_attempt": false
+	}
+
+
+func _send_host_hello_ack(steam_id: String, hello_attempt_id: String) -> void:
+	if not _is_game_host() or hello_attempt_id == "":
+		return
+	_send_p2p_json(steam_id, {
+		"msg_type": "hello_ack",
+		"role": "host",
+		"steam_id": _self_steam_id,
+		"hello_attempt_id": hello_attempt_id
+	}, true)
 
 
 func _poll_client_hello_retry() -> void:
@@ -2568,8 +2711,12 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 		var send_setup_usec = 0
 		var send_selection_usec = 0
 		var broadcast_usec = 0
-		var first_hello = not _seen_client_hello_by_steam_id.has(from_steam_id)
-		_seen_client_hello_by_steam_id[from_steam_id] = true
+		var hello_attempt = _process_client_hello_attempt(from_steam_id, message)
+		if bool(hello_attempt.get("stale_attempt", false)):
+			return
+		var hello_attempt_id = str(hello_attempt.get("attempt_id", ""))
+		var has_hello_attempt_id = bool(hello_attempt.get("has_attempt_id", false))
+		var first_hello = bool(hello_attempt.get("first_hello", false))
 		var client_content_changed = false
 		var menu_sync_for_capability = _get_menu_sync_manager()
 		var stage_start_usec = OS.get_ticks_usec()
@@ -2594,6 +2741,8 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 				_refresh_lobby_members()
 				_schedule_prime_and_broadcast_after_remote_join()
 			refresh_members_usec = OS.get_ticks_usec() - stage_start_usec
+			if has_hello_attempt_id:
+				_send_host_hello_ack(from_steam_id, hello_attempt_id)
 			stage_start_usec = OS.get_ticks_usec()
 			if client_content_changed:
 				_sent_character_setup_key_by_steam_id.clear()
@@ -2602,7 +2751,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 					menu_sync_for_capability.apply_host_dlc_gate_now()
 			dlc_gate_usec = OS.get_ticks_usec() - stage_start_usec
 			stage_start_usec = OS.get_ticks_usec()
-			_send_host_phase_setup_to_client(from_steam_id, first_hello or client_content_changed)
+			_send_host_phase_setup_to_client(from_steam_id, has_hello_attempt_id or first_hello or client_content_changed)
 			send_setup_usec = OS.get_ticks_usec() - stage_start_usec
 			stage_start_usec = OS.get_ticks_usec()
 			_send_selection_state_to_client(from_steam_id, first_hello or client_content_changed)
@@ -2615,6 +2764,17 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 		var hello_total_usec = OS.get_ticks_usec() - hello_start_usec
 		if hello_total_usec >= BO_NET_DIAG_SINGLE_COST_USEC:
 			_bo_net_diag_log("HELLO_DETAIL", "total_us=" + str(hello_total_usec) + " capability_us=" + str(capability_usec) + " mark_sync_us=" + str(mark_sync_usec) + " ensure_slot_us=" + str(ensure_slot_usec) + " refresh_members_us=" + str(refresh_members_usec) + " dlc_gate_us=" + str(dlc_gate_usec) + " send_setup_us=" + str(send_setup_usec) + " send_selection_us=" + str(send_selection_usec) + " broadcast_us=" + str(broadcast_usec) + " first=" + str(first_hello) + " content_changed=" + str(client_content_changed) + " from=" + from_steam_id)
+		return
+
+	if msg_type == "hello_ack":
+		if _is_game_host():
+			return
+		if from_steam_id != _get_game_host_steam_id():
+			return
+		var acknowledged_attempt_id = str(message.get("hello_attempt_id", ""))
+		if acknowledged_attempt_id == "" or acknowledged_attempt_id != _client_hello_attempt_id:
+			return
+		_stop_client_hello_retry("hello_ack")
 		return
 
 	if msg_type == "request_selection_state":
@@ -2650,7 +2810,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 		# setup packet. Keep hello retries active until a correctly targeted setup arrives.
 		if not _host_setup_has_valid_local_slot(message):
 			return
-		_stop_client_hello_retry("host_character_setup")
+		_stop_client_hello_retry_if_legacy("host_character_setup")
 		if _should_ignore_duplicate_host_setup(from_steam_id, msg_type, message):
 			return
 		# A fresh character setup means Host has returned to mutable staging. Clear the
@@ -2671,7 +2831,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 			return
 		if not _host_setup_has_valid_local_slot(message):
 			return
-		_stop_client_hello_retry("host_weapon_setup")
+		_stop_client_hello_retry_if_legacy("host_weapon_setup")
 		if _should_ignore_duplicate_host_setup(from_steam_id, msg_type, message):
 			return
 		_unlock_online_run_slots()
@@ -2731,7 +2891,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 			return
 		if _client_should_drop_stale_menu_scene_state(message):
 			return
-		_stop_client_hello_retry("menu_scene_state")
+		_stop_client_hello_retry_if_legacy("menu_scene_state")
 		_apply_host_zone_sync_for_client(message, "menu_scene_state")
 		var menu_sync_scene_client = _get_menu_sync_manager()
 		if menu_sync_scene_client != null and menu_sync_scene_client.has_method("receive_menu_scene_state_from_host"):
@@ -2768,7 +2928,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 			return
 		if _should_drop_stale_retry_battle_packet(message):
 			return
-		_stop_client_hello_retry("battle_reliable_events")
+		_stop_client_hello_retry_if_legacy("battle_reliable_events")
 		_handle_battle_reliable_events_from_host(message)
 		return
 
@@ -2777,7 +2937,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 			return
 		if _should_drop_stale_retry_battle_packet(message):
 			return
-		_stop_client_hello_retry("battle_terminal_state")
+		_stop_client_hello_retry_if_legacy("battle_terminal_state")
 		_handle_battle_terminal_state_from_host(message)
 		return
 
@@ -2786,7 +2946,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 			return
 		if _should_drop_stale_retry_battle_packet(message):
 			return
-		_stop_client_hello_retry("battle_snapshot")
+		_stop_client_hello_retry_if_legacy("battle_snapshot")
 		_handle_battle_snapshot_from_host(message)
 		return
 
@@ -2798,7 +2958,7 @@ func _handle_p2p_message(from_steam_id: String, message: Dictionary) -> void:
 			if (state_screen == "character_selection" or state_screen == "weapon_selection") and menu_sync_client != null and menu_sync_client.has_method("has_host_catalog_for_screen") and not menu_sync_client.has_host_catalog_for_screen(state_screen):
 				_send_client_hello_to_host()
 				return
-			_stop_client_hello_retry("selection_state")
+			_stop_client_hello_retry_if_legacy("selection_state")
 		if menu_sync_client != null and menu_sync_client.has_method("receive_selection_state_from_host"):
 			menu_sync_client.receive_selection_state_from_host(message, _self_steam_id, _get_game_host_steam_id())
 		return
@@ -4280,7 +4440,7 @@ func _duplicate_array_safe(value) -> Array:
 
 
 func _handle_game_start_prepare_from_host(message: Dictionary) -> void:
-	_stop_client_hello_retry("game_start_prepare")
+	_stop_client_hello_retry_if_legacy("game_start_prepare")
 	_apply_host_zone_sync_for_client(message, "game_start_prepare")
 	_online_flow_started = true
 	_online_flow_left_since_msec = 0
@@ -4429,7 +4589,7 @@ func _commit_host_game_start(reason: String) -> void:
 
 
 func _handle_game_start_commit_from_host(message: Dictionary) -> void:
-	_stop_client_hello_retry("game_start_commit")
+	_stop_client_hello_retry_if_legacy("game_start_commit")
 	_apply_host_zone_sync_for_client(message, "game_start_commit")
 	_online_flow_started = true
 	_online_flow_left_since_msec = 0

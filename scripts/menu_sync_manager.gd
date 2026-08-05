@@ -480,6 +480,28 @@ func _reset_run_page_runtime_state_for_game_start(clear_queued_actions: bool = t
 	_last_progression_options_processed_key = ""
 
 
+func reset_remote_peer_reconnect_state(steam_id: String) -> void:
+	if steam_id == "" or steam_id == "0":
+		return
+
+	_host_client_character_lookup_by_steam_id.erase(steam_id)
+	_host_client_item_lookup_by_steam_id.erase(steam_id)
+	_host_client_weapon_lookup_by_steam_id.erase(steam_id)
+	_host_client_character_catalog_key_by_steam_id.erase(steam_id)
+	_host_client_shop_content_catalog_key_by_steam_id.erase(steam_id)
+	_last_run_page_action_seq_by_origin.erase(steam_id)
+
+	var action_prefix = steam_id + ":"
+	for action_id in _processed_run_page_action_ids.keys():
+		if str(action_id) == steam_id or str(action_id).begins_with(action_prefix):
+			_processed_run_page_action_ids.erase(action_id)
+
+	var fingerprint_prefix = steam_id + "|"
+	for fingerprint in _recent_mutating_run_page_action_keys.keys():
+		if str(fingerprint).begins_with(fingerprint_prefix):
+			_recent_mutating_run_page_action_keys.erase(fingerprint)
+
+
 func reset_online_session_state(reason: String = "") -> void:
 	# Full per-room cleanup. This intentionally does not modify the player's real save data;
 	# it only clears transient online mirrors, Host catalogs, pending authoritative states,
